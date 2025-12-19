@@ -1,3 +1,9 @@
-STARLET_SECRET_KEY = 
-GOOGLE_CLIENT_ID = 
-GOOGLE_CLIENT_SECRET=
+# This is a sample environment file.
+# Copy this file to .env and replace the placeholder values with your actual values.
+STARLET_SECRET_KEY=your-secret-key
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+NGROK_AUTHTOKEN=your-ngrok-authtoken
+PUBLIC_DOMAIN=your-public-domain
+UVICORN_PORT=8001
+ENV=local

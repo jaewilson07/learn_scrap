@@ -12,7 +12,9 @@ dependencies = [
     "starlette",
     "authlib",
     "itsdangerous",
-    "python-dotenv"
+    "python-dotenv",
+    "httpx",
+    "dc_logger"
 ]
 
 [tool.uv]

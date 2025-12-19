@@ -1,28 +1,41 @@
-# 1. Start with a Python base image
-FROM python:3.12-slim
+# Stage 1: Builder
+FROM python:3.12-slim AS builder
 
-# 2. Install 'uv' into the container 
-# (We copy the executable directly from uv's official image - it's a cool trick!)
+# Install 'uv'
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# 3. Set the working directory
+# Set working directory
 WORKDIR /app
 
-# 4. Copy the project definition files FIRST (for caching)
-# You need both pyproject.toml and uv.lock
-COPY pyproject.toml uv.lock ./
+# Copy dependency definition files
+COPY pyproject.toml uv.lock README.md ./
 
-# 5. Install dependencies using uv
-# --frozen: ensures we use exactly the versions in uv.lock
-# --no-cache: keeps the image small
+# Install dependencies
 RUN uv sync --frozen --no-cache
 
-# 6. Copy the rest of your application code
-COPY . .
+# Stage 2: Final
+FROM python:3.12-slim
 
-# 7. IMPORTANT: Add the virtual environment to the PATH
-# uv installs into .venv by default, so we need to tell Docker where to find 'uvicorn'
+# Set working directory
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv .venv
+
+# Copy application code
+COPY src/ ./src/
+
+# Copy project metadata for editable install
+COPY pyproject.toml README.md ./
+
+# Install the package in editable mode
+RUN . .venv/bin/activate && pip install -e .
+
+# Add venv to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-# 8. Run the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+# Copy start script
+COPY start.sh .
+
+# Run the app
+CMD ["./start.sh"]
