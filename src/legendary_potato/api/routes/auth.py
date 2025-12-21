@@ -2,10 +2,37 @@ from fastapi import APIRouter, Request
 from starlette.responses import RedirectResponse, JSONResponse
 
 from ...api.dependencies import get_db
+from ...core.config import app_config
 from ...core.security import oauth
 from ...core.tokens import create_access_token
 
 router = APIRouter()
+
+
+def _is_allowed_return_to(return_to: str) -> bool:
+    """
+    Allowlist rules:
+    - Entries in EXTENSION_RETURN_TO_ALLOWLIST can be either:
+      - a full URL (exact match), e.g. chrome-extension://<id>/auth.html
+      - an origin prefix ending with '/', e.g. chrome-extension://<id>/
+    """
+    if not return_to.startswith("chrome-extension://"):
+        return False
+
+    allowlist = app_config.extension_return_to_allowlist
+    if not allowlist:
+        # In production we require explicit allowlisting.
+        return app_config.env != "production"
+
+    for entry in allowlist:
+        if entry.endswith("/"):
+            if return_to.startswith(entry):
+                return True
+        else:
+            if return_to == entry:
+                return True
+    return False
+
 
 @router.get("/login")
 async def login(request: Request, return_to: str | None = None):
@@ -16,9 +43,11 @@ async def login(request: Request, return_to: str | None = None):
     there after login with an access token in the URL fragment.
     """
     if return_to:
-        # Only allow extension return targets for now.
-        if not return_to.startswith("chrome-extension://"):
-            return JSONResponse(status_code=400, content={"error": "Invalid return_to"})
+        if not _is_allowed_return_to(return_to):
+            msg = "Invalid return_to"
+            if app_config.env == "production" and not app_config.extension_return_to_allowlist:
+                msg = "return_to not allowed; configure EXTENSION_RETURN_TO_ALLOWLIST"
+            return JSONResponse(status_code=400, content={"error": msg})
         request.session["return_to"] = return_to
 
     redirect_uri = request.url_for("auth_google_callback")

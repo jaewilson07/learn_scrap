@@ -2,6 +2,7 @@ import time
 import uuid
 
 import jwt
+from jwt import InvalidTokenError
 
 from .config import app_config
 
@@ -34,5 +35,7 @@ def verify_access_token(token: str) -> uuid.UUID:
         issuer=app_config.api_jwt_issuer,
         options={"require": ["exp", "iat", "iss", "sub"]},
     )
+    if payload.get("typ") != "access":
+        raise InvalidTokenError("Invalid token type")
     return uuid.UUID(str(payload["sub"]))
 
