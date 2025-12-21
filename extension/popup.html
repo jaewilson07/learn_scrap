@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Save page</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+          sans-serif;
+        margin: 12px;
+        width: 320px;
+      }
+      .row {
+        margin-bottom: 10px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px;
+      }
+      button {
+        width: 100%;
+        padding: 10px;
+        margin-top: 8px;
+        cursor: pointer;
+      }
+      .status {
+        font-size: 12px;
+        color: #333;
+        margin-top: 8px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <label for="baseUrl">Backend URL</label>
+      <input id="baseUrl" placeholder="http://localhost:8001" />
+      <button id="saveBaseUrl">Save backend URL</button>
+    </div>
+
+    <button id="login">Sign in with Google</button>
+    <button id="savePage">Save current page</button>
+    <button id="listBookmarks">List my bookmarks</button>
+
+    <div id="status" class="status"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
+

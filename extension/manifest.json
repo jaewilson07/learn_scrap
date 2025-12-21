@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Legendary Potato Bookmark Saver",
+  "version": "0.1.0",
+  "description": "Login with Google and save the current page to the backend.",
+  "action": {
+    "default_title": "Save page",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "icons": {},
+  "minimum_chrome_version": "114"
+}
