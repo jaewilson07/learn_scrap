@@ -17,6 +17,8 @@ Copy `env_sample` to `.env` and fill in:
 - `STARLET_SECRET_KEY`
 - `API_JWT_SECRET`
 - `DATABASE_URL`
+- `MAX_HTML_BYTES` (optional)
+- `REFRESH_TOKEN_TTL_SECONDS` (optional)
 
 If you're using `docker compose` from this repo, set:
 
@@ -43,5 +45,5 @@ In Google Cloud Console, set the authorized redirect URI to:
 3. Click **Load unpacked** and select the `extension/` folder
 4. Click the extension icon:
    - **Sign in with Google** (opens a login tab)
-   - After login, the backend redirects to `extension/auth.html` and stores a bearer token
+   - After login, the backend redirects to `extension/auth.html` and stores an access + refresh token
    - Click **Save current page** to send `{url,title,html}` to `POST /bookmarks`

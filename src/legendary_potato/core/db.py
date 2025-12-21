@@ -1,50 +1,37 @@
+import hashlib
+import secrets
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import asyncpg
+
+from .config import app_config
+from .migrations import MigrationRunner
 
 __all__ = ["Db", "create_db"]
 
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS users (
-  id uuid PRIMARY KEY,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS user_identities (
-  id uuid PRIMARY KEY,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider text NOT NULL,
-  provider_subject text NOT NULL,
-  email text NULL,
-  name text NULL,
-  avatar_url text NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE(provider, provider_subject)
-);
-
-CREATE TABLE IF NOT EXISTS bookmarks (
-  id uuid PRIMARY KEY,
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  url text NOT NULL,
-  title text NULL,
-  html text NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_bookmarks_user_created_at
-  ON bookmarks(user_id, created_at DESC);
-"""
+def _hash_refresh_token(token: str) -> str:
+    if not app_config.api_jwt_secret:
+        raise RuntimeError("API_JWT_SECRET is not configured")
+    # Bind hash to server secret so DB leaks are less useful.
+    h = hashlib.sha256()
+    h.update(app_config.api_jwt_secret.encode("utf-8"))
+    h.update(b":")
+    h.update(token.encode("utf-8"))
+    return h.hexdigest()
 
 
 @dataclass(frozen=True)
 class Db:
     pool: asyncpg.Pool
 
-    async def init_schema(self) -> None:
+    async def migrate(self, *, migrations_dir: Path) -> list[str]:
         async with self.pool.acquire() as conn:
-            await conn.execute(SCHEMA_SQL)
+            runner = MigrationRunner(migrations_dir=migrations_dir)
+            return await runner.apply(conn)
 
     async def get_or_create_user_id_for_identity(
         self,
@@ -92,6 +79,19 @@ class Db:
                 )
                 return user_id
 
+    async def get_identities(self, *, user_id: uuid.UUID) -> list[dict]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT provider, provider_subject, email, name, avatar_url, created_at
+                FROM user_identities
+                WHERE user_id = $1
+                ORDER BY created_at ASC
+                """,
+                user_id,
+            )
+        return [dict(r) for r in rows]
+
     async def create_bookmark(
         self,
         *,
@@ -129,6 +129,74 @@ class Db:
                 limit,
             )
         return [dict(r) for r in rows]
+
+    async def issue_refresh_token(self, *, user_id: uuid.UUID) -> str:
+        token = secrets.token_urlsafe(48)
+        token_hash = _hash_refresh_token(token)
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(seconds=int(app_config.refresh_token_ttl_seconds))
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at)
+                VALUES ($1, $2, $3, $4)
+                """,
+                uuid.uuid4(),
+                user_id,
+                token_hash,
+                expires_at,
+            )
+        return token
+
+    async def rotate_refresh_token(self, *, refresh_token: str) -> tuple[uuid.UUID, str]:
+        token_hash = _hash_refresh_token(refresh_token)
+        now = datetime.now(timezone.utc)
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, user_id, expires_at, revoked_at
+                    FROM refresh_tokens
+                    WHERE token_hash = $1
+                    """,
+                    token_hash,
+                )
+                if not row:
+                    raise ValueError("Invalid refresh token")
+                if row["revoked_at"] is not None:
+                    raise ValueError("Refresh token revoked")
+                if row["expires_at"] <= now:
+                    raise ValueError("Refresh token expired")
+
+                await conn.execute(
+                    """
+                    UPDATE refresh_tokens
+                    SET last_used_at = $2, revoked_at = $2
+                    WHERE id = $1
+                    """,
+                    row["id"],
+                    now,
+                )
+
+        user_id = uuid.UUID(str(row["user_id"]))
+        new_token = await self.issue_refresh_token(user_id=user_id)
+        return user_id, new_token
+
+    async def revoke_refresh_tokens_for_user(self, *, user_id: uuid.UUID) -> int:
+        now = datetime.now(timezone.utc)
+        async with self.pool.acquire() as conn:
+            res = await conn.execute(
+                """
+                UPDATE refresh_tokens
+                SET revoked_at = $2
+                WHERE user_id = $1 AND revoked_at IS NULL
+                """,
+                user_id,
+                now,
+            )
+        # asyncpg returns strings like "UPDATE 3"
+        return int(res.split()[-1]) if res else 0
 
 
 async def create_db(database_url: str) -> Db:

@@ -3,6 +3,7 @@ import uuid
 from fastapi import HTTPException, Request
 
 from ..core.db import Db
+from ..core.rate_limit import RateLimiter
 from ..core.tokens import verify_access_token
 
 
@@ -11,6 +12,14 @@ def get_db(request: Request) -> Db:
     if db is None:
         raise HTTPException(status_code=500, detail="Database is not configured")
     return db
+
+
+def get_rate_limiter(request: Request) -> RateLimiter:
+    rl = getattr(request.app.state, "rate_limiter", None)
+    if rl is None:
+        rl = RateLimiter()
+        request.app.state.rate_limiter = rl
+    return rl
 
 
 def get_session_user_id(request: Request) -> uuid.UUID:

@@ -24,6 +24,7 @@ COPY --from=builder /app/.venv .venv
 
 # Copy application code
 COPY src/ ./src/
+COPY migrations/ ./migrations/
 
 # Copy project metadata for editable install
 COPY pyproject.toml README.md ./

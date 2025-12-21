@@ -20,12 +20,61 @@ async function getToken() {
   return accessToken || null;
 }
 
+async function getRefreshToken() {
+  const { refreshToken } = await getStored(["refreshToken"]);
+  return refreshToken || null;
+}
+
+async function setTokens({ accessToken, refreshToken }) {
+  await setStored({ accessToken, refreshToken });
+}
+
 async function ensureToken() {
   const token = await getToken();
   if (!token) {
     throw new Error("Not signed in. Click 'Sign in with Google' first.");
   }
   return token;
+}
+
+async function refreshAccessToken() {
+  const baseUrl = await getBaseUrl();
+  const refreshToken = await getRefreshToken();
+  if (!refreshToken) {
+    throw new Error("Missing refresh token. Please sign in again.");
+  }
+
+  const resp = await fetch(`${baseUrl}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Refresh failed (${resp.status}): ${text}`);
+  }
+
+  const json = await resp.json();
+  await setTokens({ accessToken: json.access_token, refreshToken: json.refresh_token });
+  return json.access_token;
+}
+
+async function fetchWithAuth(url, options = {}) {
+  let token = await ensureToken();
+  const first = await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` },
+  });
+
+  if (first.status !== 401) return first;
+
+  // Attempt one refresh + retry.
+  token = await refreshAccessToken();
+  return await fetch(url, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` },
+  });
 }
 
 async function login() {
@@ -56,14 +105,12 @@ async function extractCurrentPage() {
 
 async function savePage() {
   const baseUrl = await getBaseUrl();
-  const token = await ensureToken();
   const page = await extractCurrentPage();
 
-  const resp = await fetch(`${baseUrl}/bookmarks`, {
+  const resp = await fetchWithAuth(`${baseUrl}/bookmarks`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(page),
   });
@@ -79,11 +126,8 @@ async function savePage() {
 
 async function listBookmarks() {
   const baseUrl = await getBaseUrl();
-  const token = await ensureToken();
 
-  const resp = await fetch(`${baseUrl}/bookmarks?limit=10`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const resp = await fetchWithAuth(`${baseUrl}/bookmarks?limit=10`);
 
   if (!resp.ok) {
     const text = await resp.text();

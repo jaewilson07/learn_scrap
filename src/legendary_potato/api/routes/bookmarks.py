@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..dependencies import get_bearer_user_id, get_db
+from ..dependencies import get_bearer_user_id, get_db, get_rate_limiter
+from ...core.config import app_config
 from ...core.db import Db
 
 __all__ = ["router"]
@@ -21,7 +22,18 @@ async def create_bookmark(
     payload: BookmarkCreate,
     user_id=Depends(get_bearer_user_id),
     db: Db = Depends(get_db),
+    rl=Depends(get_rate_limiter),
 ):
+    if not rl.allow(key=f"bookmark:create:{user_id}", limit=60, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    if payload.html is not None:
+        if len(payload.html.encode("utf-8")) > int(app_config.max_html_bytes):
+            raise HTTPException(
+                status_code=413,
+                detail=f"HTML too large (max {app_config.max_html_bytes} bytes)",
+            )
+
     bookmark_id = await db.create_bookmark(
         user_id=user_id, url=payload.url, title=payload.title, html=payload.html
     )

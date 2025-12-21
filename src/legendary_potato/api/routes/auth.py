@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import RedirectResponse, JSONResponse
 
-from ...api.dependencies import get_db
+from ...api.dependencies import get_db, get_rate_limiter
 from ...core.config import app_config
 from ...core.security import oauth
 from ...core.tokens import create_access_token
@@ -35,13 +35,21 @@ def _is_allowed_return_to(return_to: str) -> bool:
 
 
 @router.get("/login")
-async def login(request: Request, return_to: str | None = None):
+async def login(
+    request: Request,
+    return_to: str | None = None,
+    rl=Depends(get_rate_limiter),
+):
     """
     Starts Google OAuth.
 
     If `return_to` is provided (e.g. a chrome extension URL), we will redirect
     there after login with an access token in the URL fragment.
     """
+    ip = request.client.host if request.client else "unknown"
+    if not rl.allow(key=f"auth:login:{ip}", limit=30, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
     if return_to:
         if not _is_allowed_return_to(return_to):
             msg = "Invalid return_to"
@@ -78,8 +86,13 @@ async def auth_google_callback(request: Request):
         return_to = request.session.pop("return_to", None)
         if return_to and user_id is not None:
             access_token = create_access_token(user_id=user_id)
+            refresh_token = await db.issue_refresh_token(user_id=user_id)
             # Use fragment so the token doesn't hit server logs.
-            redirect = f"{return_to}#access_token={access_token}&token_type=bearer"
+            redirect = (
+                f"{return_to}#access_token={access_token}"
+                f"&refresh_token={refresh_token}"
+                f"&token_type=bearer"
+            )
             return RedirectResponse(url=redirect)
 
         return RedirectResponse(url="/")

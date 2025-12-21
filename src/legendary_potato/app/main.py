@@ -1,7 +1,10 @@
+from pathlib import Path
+
 from ..core.config import app_config
 from ..api.routes import public, auth, protected
 from ..api.routes import auth_api, bookmarks
 from ..core.db import create_db
+from ..core.rate_limit import RateLimiter
 
 from starlette.concurrency import run_in_threadpool
 from pyngrok.exception import PyngrokNgrokError
@@ -23,10 +26,11 @@ logger = get_logger()
 async def lifespan(app: FastAPI):
     public_url = None
     db = None
+    app.state.rate_limiter = RateLimiter()
 
     if app_config.database_url:
         db = await create_db(app_config.database_url)
-        await db.init_schema()
+        await db.migrate(migrations_dir=Path("migrations"))
         app.state.db = db
 
     if app_config.env != "production":

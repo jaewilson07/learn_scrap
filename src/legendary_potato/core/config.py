@@ -13,6 +13,8 @@ class AppConfig(BaseModel):
     api_jwt_secret: str | None = None
     api_jwt_issuer: str = "legendary_potato"
     api_jwt_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    refresh_token_ttl_seconds: int = 60 * 60 * 24 * 30  # 30 days
+    max_html_bytes: int = 1_500_000  # ~1.5MB
     cors_allow_origin_regex: str | None = r"chrome-extension://.*"
     extension_return_to_allowlist: list[str] = Field(default_factory=list)
     uvicorn_port: int = 8001
@@ -28,6 +30,10 @@ app_config = AppConfig(
     api_jwt_secret=os.environ.get("API_JWT_SECRET"),
     api_jwt_issuer=os.environ.get("API_JWT_ISSUER", "legendary_potato"),
     api_jwt_ttl_seconds=int(os.environ.get("API_JWT_TTL_SECONDS", 60 * 60 * 24 * 7)),
+    refresh_token_ttl_seconds=int(
+        os.environ.get("REFRESH_TOKEN_TTL_SECONDS", 60 * 60 * 24 * 30)
+    ),
+    max_html_bytes=int(os.environ.get("MAX_HTML_BYTES", 1_500_000)),
     cors_allow_origin_regex=os.environ.get("CORS_ALLOW_ORIGIN_REGEX", r"chrome-extension://.*"),
     extension_return_to_allowlist=[
         s.strip()
