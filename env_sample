@@ -7,3 +7,17 @@ NGROK_AUTHTOKEN=your-ngrok-authtoken
 PUBLIC_DOMAIN=your-public-domain
 UVICORN_PORT=8001
 ENV=local
+
+# Supabase/Postgres (behind API)
+# For docker-compose using the included db service:
+# DATABASE_URL=postgresql://app:app@db:5432/app
+DATABASE_URL=postgresql://app:app@localhost:5432/app
+
+# JWT used to mint access tokens for the extension
+API_JWT_SECRET=change-me-to-a-long-random-secret
+API_JWT_ISSUER=legendary_potato
+API_JWT_TTL_SECONDS=604800
+
+# CORS: allow extension origin(s) to call the API
+# Example: chrome-extension://<your-extension-id>
+CORS_ALLOW_ORIGIN_REGEX=chrome-extension://.*

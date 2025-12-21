@@ -14,7 +14,9 @@ dependencies = [
     "itsdangerous",
     "python-dotenv",
     "httpx",
-    "dc_logger"
+    "dc_logger",
+    "asyncpg",
+    "PyJWT"
 ]
 
 [tool.uv]
