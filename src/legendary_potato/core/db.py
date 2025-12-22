@@ -200,6 +200,6 @@ class Db:
 
 
 async def create_db(database_url: str) -> Db:
-    pool = await asyncpg.create_pool(dsn=database_url)
+    pool = await asyncpg.create_pool(dsn=database_url, statement_cache_size=0)
     return Db(pool=pool)
 

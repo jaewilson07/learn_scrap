@@ -1,6 +1,9 @@
 from pydantic import BaseModel, Field
 import os
+from dotenv import load_dotenv
+from ..utils.services.db_utils import get_database_url
 
+load_dotenv()
 
 __all__ = ["app_config"]
 
@@ -26,7 +29,7 @@ app_config = AppConfig(
     google_client_id=os.environ["GOOGLE_CLIENT_ID"],
     google_client_secret=os.environ["GOOGLE_CLIENT_SECRET"],
     starlette_session_key=os.environ["STARLET_SECRET_KEY"],
-    database_url=os.environ.get("DATABASE_URL"),
+    database_url=get_database_url(),
     api_jwt_secret=os.environ.get("API_JWT_SECRET"),
     api_jwt_issuer=os.environ.get("API_JWT_ISSUER", "legendary_potato"),
     api_jwt_ttl_seconds=int(os.environ.get("API_JWT_TTL_SECONDS", 60 * 60 * 24 * 7)),
