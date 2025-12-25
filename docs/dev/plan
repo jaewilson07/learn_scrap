@@ -1,0 +1,389 @@
+# OAuth Implementation Plan
+Date: 2025-12-17
+
+## Current Status
+- ✅ FastAPI app with OAuth setup (Authlib + Starlette)
+- ✅ SessionMiddleware configured
+- ✅ Google OAuth registered with proper scopes
+- ❌ Login endpoint (stub only)
+- ❌ Callback endpoint (stub only - has typo: "googgle")
+- ❌ Logout endpoint (stub only)
+- ❌ Protected routes
+- ❌ User session management
+
+## Implementation Steps
+
+### 1. Fix Typo in Callback Route
+✅ Change `/auth/googgle/callback` to `/auth/google/callback`
+
+### 2. Implement Login Endpoint
+✅ Redirect user to Google OAuth authorization
+- Generate redirect_uri dynamically
+
+### 3. Implement Callback Endpoint
+- Handle OAuth callback from Google
+- Exchange authorization code for tokens
+- Store user info in session
+- Redirect to home or dashboard
+
+### 4. Implement Logout Endpoint
+- Clear session data
+- Redirect to home page
+
+### 5. Add Protected Route Example
+- Create a `/profile` or `/dashboard` route
+- Check for authenticated user in session
+- Redirect to login if not authenticated
+
+### 6. Add User Dependency (Optional)
+- Create a FastAPI dependency to get current user
+- Reusable across protected endpoints
+
+## Sample Code
+
+### Complete app.py Implementation:
+
+```python
+import os
+from fastapi import FastAPI, Request, Depends, HTTPException
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import RedirectResponse, JSONResponse
+from authlib.integrations.starlette_client import OAuth
+
+__all__ = ["app"]
+
+secret_key = os.environ["STARLET_SECRET_KEY"]
+google_client_id = os.environ["GOOGLE_CLIENT_ID"]
+google_client_secret = os.environ["GOOGLE_CLIENT_SECRET"]
+
+# Create the application instance
+app = FastAPI()
+
+# Required to "remember" the user after they log in
+app.add_middleware(SessionMiddleware, secret_key=secret_key)
+
+oauth = OAuth()
+
+oauth.register(
+    name="google",
+    client_id=google_client_id,
+    client_secret=google_client_secret,
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+
+
+# Dependency to get current user
+def get_current_user(request: Request):
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+# Public routes
+@app.get("/")
+def read_root(request: Request):
+    user = request.session.get("user")
+    if user:
+        return {"message": f"Hello {user.get('name', 'User')}", "user": user}
+    return {"message": "Hello World", "login_url": "/login"}
+
+
+@app.get("/login")
+async def login(request: Request):
+    # Generate the redirect URI dynamically
+    redirect_uri = request.url_for("auth_google_callback")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback")
+async def auth_google_callback(request: Request):
+    try:
+        # Exchange authorization code for access token
+        token = await oauth.google.authorize_access_token(request)
+        
+        # Get user info from Google
+        user_info = token.get("userinfo")
+        if user_info:
+            # Store user info in session
+            request.session["user"] = dict(user_info)
+        
+        return RedirectResponse(url="/")
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Authentication failed", "detail": str(e)}
+        )
+
+
+
+
+# Protected routes example
+@app.get("/profile")
+async def profile(user: dict = Depends(get_current_user)):
+    return {
+        "message": "Your profile",
+        "user": user
+    }
+
+
+@app.get("/dashboard")
+async def dashboard(request: Request, user: dict = Depends(get_current_user)):
+    return {
+        "message": f"Welcome to your dashboard, {user.get('name')}!",
+        "email": user.get("email"),
+        "picture": user.get("picture")
+    }
+```
+
+## Configuration Notes
+
+### Environment Variables (in .env file):
+```
+STARLET_SECRET_KEY=your-secret-key-min-32-chars-long
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+```
+
+### Google Cloud Console Setup:
+1. Go to https://console.cloud.google.com/
+2. Create a new project or select existing
+3. Enable Google+ API
+4. Go to Credentials → Create OAuth 2.0 Client ID
+5. Application type: Web application
+6. Authorized redirect URIs:
+   - For local: `http://localhost:8001/auth/google/callback`
+   - For ngrok: `https://YOUR-NGROK-URL/auth/google/callback`
+   - **Important:** Update ngrok URL each time you restart
+
+## Testing Flow
+
+1. Start the app: `python main.py`
+2. Note the ngrok public URL
+3. Update Google OAuth redirect URI in Google Cloud Console
+4. Visit: `https://YOUR-NGROK-URL/`
+5. Click or visit `/login`
+6. Authorize with Google
+7. Get redirected back to home page (logged in)
+8. Visit `/profile` or `/dashboard` (protected)
+9. Visit `/logout` to log out
+
+## Security Considerations
+
+- ✅ Use HTTPS in production (ngrok provides this)
+- ✅ Keep secret_key secure and random
+- ✅ Don't commit .env file to git
+- ✅ Session cookies are httpOnly by default with SessionMiddleware
+- ⚠️ Consider adding CSRF protection for production
+- ⚠️ Add session timeout/expiry for production
+- ⚠️ Validate token expiration
+
+## Optional Enhancements
+
+1. **Database Integration**: Store users in database
+2. **JWT Tokens**: Use JWT instead of sessions for stateless auth
+3. **Multiple OAuth Providers**: Add GitHub, Microsoft, etc.
+4. **User Roles**: Implement role-based access control
+5. **Refresh Tokens**: Handle token refresh automatically
+6. **Rate Limiting**: Prevent abuse of auth endpoints
+
+## File Structure
+
+### Current Structure (Monolithic)
+```
+learn_scrap/
+├── src/legendary_potato/app/
+│   └── app.py              # Everything in one file (135+ lines)
+├── main.py                 # Entry point
+├── .env                    # Environment variables
+└── env_sample              # Template
+```
+
+**Problems with current structure:**
+- All routes, config, and dependencies in one file
+- Hard to test individual components
+- Difficult to scale as app grows
+- No clear separation of concerns
+
+### Proposed Modular Structure (Recommended)
+
+```
+learn_scrap/
+├── src/legendary_potato/
+│   ├── __init__.py
+│   ├── app/
+│   │   ├── __init__.py
+│   │   └── main.py                    # FastAPI app instance + middleware setup
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── config.py                  # Configuration/settings (env vars)
+│   │   └── security.py                # OAuth setup, session config
+│   ├── api/
+│   │   ├── __init__.py
+│   │   ├── routes/
+│   │   │   ├── __init__.py
+│   │   │   ├── auth.py                # /login, /logout, /callback
+│   │   │   ├── public.py              # / (home), health checks
+│   │   │   └── protected.py           # /profile, /dashboard
+│   │   └── dependencies.py            # get_current_user, etc.
+│   ├── models/                         # Optional: for future database models
+│   │   ├── __init__.py
+│   │   └── user.py                    # User model/schema
+│   └── services/                       # Optional: business logic
+│       ├── __init__.py
+│       └── auth_service.py            # Auth-related business logic
+├── tests/                              # Future: test files mirror structure
+│   ├── __init__.py
+│   ├── test_auth.py
+│   └── test_routes.py
+├── main.py                             # Entry point (imports from app.main)
+├── .env
+├── env_sample
+└── docs/dev/
+    └── plan                            # This file
+```
+
+### File Responsibilities
+
+#### `src/legendary_potato/core/config.py`
+**Purpose:** Centralized configuration management
+```python
+# Content overview (not implementation):
+- Load environment variables
+- Define Config/Settings class
+- Validation of required env vars
+- Export: secret_key, google_client_id, google_client_secret
+- Future: database URLs, API keys, feature flags
+```
+
+#### `src/legendary_potato/core/security.py`
+**Purpose:** OAuth and security setup
+```python
+# Content overview:
+- Import OAuth from authlib
+- Configure oauth instance with Google
+- Register OAuth providers
+- Export: oauth instance
+- Future: JWT helpers, password hashing, CSRF protection
+```
+
+#### `src/legendary_potato/app/main.py`
+**Purpose:** FastAPI app initialization and configuration
+```python
+# Content overview:
+- Create FastAPI app instance
+- Add middleware (SessionMiddleware, CORS, etc.)
+- Include routers from api/routes/
+- Root-level exception handlers
+- Startup/shutdown events
+- Export: app instance
+```
+
+#### `src/legendary_potato/api/dependencies.py`
+**Purpose:** Reusable dependencies for routes
+```python
+# Content overview:
+- get_current_user(request) -> dict
+- get_optional_user(request) -> dict | None
+- Future: get_db, rate_limiter, role_checker
+```
+
+#### `src/legendary_potato/api/routes/auth.py`
+**Purpose:** Authentication routes
+```python
+# Content overview:
+- POST/GET /login - Initiate OAuth flow
+- GET /auth/google/callback - Handle OAuth callback
+- POST/GET /logout - Clear session
+- Future: /refresh-token, /verify-email
+```
+
+#### `src/legendary_potato/api/routes/public.py`
+**Purpose:** Public routes (no auth required)
+```python
+# Content overview:
+- GET / - Home page/welcome message
+- GET /health - Health check endpoint
+- Future: /docs override, /terms, /privacy
+```
+
+#### `src/legendary_potato/api/routes/protected.py`
+**Purpose:** Protected routes (auth required)
+```python
+# Content overview:
+- GET /profile - User profile (uses get_current_user dependency)
+- GET /dashboard - User dashboard
+- Future: /settings, /api/v1/* routes
+```
+
+#### `src/legendary_potato/models/user.py` (Optional - Future)
+**Purpose:** User data models and schemas
+```python
+# Content overview:
+- Pydantic models: UserBase, UserCreate, UserInDB
+- SQLAlchemy models: User (if using database)
+- User-related schemas for API responses
+```
+
+#### `src/legendary_potato/services/auth_service.py` (Optional - Future)
+**Purpose:** Business logic for authentication
+```python
+# Content overview:
+- create_or_update_user(user_info) - Save to DB
+- validate_session(session_data) - Check expiry
+- revoke_tokens(user_id) - Cleanup
+- Future: Complex auth flows, user management
+```
+
+### Migration Strategy
+
+**Phase 1: Core Setup**
+1. Create `core/config.py` - Move environment variable loading
+2. Create `core/security.py` - Move OAuth setup
+3. Update imports in existing `app.py`
+
+**Phase 2: Split Routes**
+4. Create `api/routes/auth.py` - Move login, logout, callback
+5. Create `api/routes/public.py` - Move home route
+6. Create `api/routes/protected.py` - Move profile, dashboard
+7. Create `api/dependencies.py` - Move get_current_user
+
+**Phase 3: Main App Refactor**
+8. Create `app/main.py` - FastAPI instance + router registration
+9. Update `main.py` (root) to import from app.main
+10. Delete old monolithic `app/app.py`
+
+**Phase 4: Testing & Validation**
+11. Test all endpoints still work
+12. Verify imports are correct
+13. Check no circular dependencies
+
+### Benefits of Modular Structure
+
+✅ **Separation of Concerns**: Each file has a single responsibility
+✅ **Testability**: Easy to unit test individual modules
+✅ **Scalability**: Add new routes/features without cluttering main file
+✅ **Maintainability**: Find code quickly, clear organization
+✅ **Team Collaboration**: Multiple developers can work on different modules
+✅ **Reusability**: Dependencies and services can be reused across routes
+✅ **Code Navigation**: IDE autocomplete and navigation work better
+
+### Recommendation
+
+Start with **Simpler Structure** first, then migrate to **Full Modular Structure** as the application grows and you add:
+- Database integration
+- Multiple OAuth providers
+- API versioning
+- Background tasks
+- Admin panel
+- More complex business logic
+
+## Next Steps
+
+1. Fix the typo in callback route
+2. Copy the sample code above to replace stub implementations
+3. Test each endpoint
+4. Add error handling as needed
+5. Consider database integration for persistent user storage
+6. **NEW:** Refactor to modular structure once OAuth is working

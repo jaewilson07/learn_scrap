@@ -1,0 +1,30 @@
+[project]
+name = "legendary_potato"
+version = "0.1.0"
+description = "My awesome FastAPI app"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pyngrok",
+    "starlette",
+    "authlib",
+    "itsdangerous",
+    "python-dotenv",
+    "httpx",
+    "dc_logger",
+    "asyncpg",
+    "PyJWT"
+]
+
+[tool.uv]
+# This section is for uv specific settings if you need them later
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/legendary_potato"]

@@ -1,0 +1,3 @@
+#!/bin/bash
+export PYTHONPATH=$PYTHONPATH:./src
+uvicorn legendary_potato.app.main:app --host 0.0.0.0 --port ${PORT:-8001}
